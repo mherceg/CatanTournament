@@ -2,6 +2,7 @@
 import os
 from discord.ext import commands
 import discord
+import random
 
 token = os.getenv('DISCORD_TOKEN')
 target_guild = 'Bot testing'
@@ -31,13 +32,16 @@ bot = commands.Bot(command_prefix='!', intents=intents)
 
 @bot.command(name='members')
 async def print_memberships(ctx):
-	
+	roles = dict()
 	for member in ctx.guild.members:
-		# print()
-		roles = ', '.join([role.name for role in member.roles])
-		# print(f'{member.name}: {roles}')
-
+		for r in member.roles:
+			if r in roles:
+				roles[r] += 1
+			else:
+				roles[r] = 1
+	ret = '\n'.join([str((i,roles[i])) for i in roles])
 	await ctx.send(f'{ctx.guild.member_count}')
+	await ctx.send(ret)
 
 @bot.command(name='table', help='!table X @user1 @user2...\nNapravi text i voice kanal sa imenom stol-X i napravi da je vidljiv korisnicima.')
 async def table(ctx, name:str, *args:discord.Member):
@@ -58,7 +62,7 @@ async def create_table_channels(ctx, name, members):
 	voice = await ctx.guild.create_voice_channel(name=f'stol-{name}', category=c, overwrites=overwrites)
 	for member in members:
 		await member.add_roles(role)
-
+	global tables
 	tables[name] = Table(name, role, [text, voice])
 
 
@@ -68,10 +72,6 @@ def get_category(ctx):
 			return c
 	return None
 
-@bot.command(name='test')
-async def test(ctx):
-	# print(ctx.guild.categories)
-	pass
 
 @bot.command(name='clean', help='!clean [True]\nMakne pristup svim stolovima koje je stvorio, sa True na kraju ih unisti\nPAZI!! Nema povratka kad unisti')
 async def clean(ctx, deep:bool=False):
@@ -102,7 +102,15 @@ async def close(ctx, name, deep:bool=False):
 		await ctx.send(f'Available channels (name|users still have access):\n{s}')
 
 @bot.command(name='distribute')
-async def distribute(ctx, name, role='Igraju', num=4):
-	pass
+async def distribute(ctx, name, role:discord.Role, num=4, help="!distribute rundaX @checkinani 4\nNapravi stolove i dodijeli pristup random igracima."):
+	members = []
+	for member in ctx.guild.members:
+		if role in member.roles:
+			members.append(member)
+	random.shuffle(members)
+	members = [members[i:i+num] for i in range(0, len(members), num)]
+	for i, l in enumerate(members):
+		await create_table_channels(ctx, f'{name}-{i+1}', l)
+		await ctx.send(f'{name}-{i+1} {", ".join([m.name for m in l])}')
 
 bot.run(token)
