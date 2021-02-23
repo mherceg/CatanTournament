@@ -8,7 +8,8 @@ token = os.getenv('DISCORD_TOKEN')
 target_guild = 'Bot testing'
 target_category = 'Stolovi'
 
-tables = dict()
+TABLES = dict()
+CATEGORIES = []
 
 class Table():
 	def __init__(self, name, role, channels):
@@ -31,6 +32,7 @@ bot = commands.Bot(command_prefix='!', intents=intents)
 
 
 @bot.command(name='members')
+@commands.has_role('Bot managers')
 async def print_memberships(ctx):
 	roles = dict()
 	for member in ctx.guild.members:
@@ -41,18 +43,21 @@ async def print_memberships(ctx):
 				roles[r] = 1
 	ret = '\n'.join([str((i,roles[i])) for i in roles])
 	await ctx.send(f'{ctx.guild.member_count}')
-	await ctx.send(ret)
+	role_names = sorted(roles.keys())
+	for r in roles:
+		await ctx.send(str((r,roles[r])))
 
 @bot.command(name='table', help='!table X @user1 @user2...\nNapravi text i voice kanal sa imenom stol-X i napravi da je vidljiv korisnicima.')
+@commands.has_role('Bot managers')
 async def table(ctx, name:str, *args:discord.Member):
 	await create_table_channels(ctx, name, args)
 	await ctx.send('Done!')
 
-async def create_table_channels(ctx, name, members):
+async def create_table_channels(ctx, name, members, rnd_name=target_category):
 	# print(members)
 	for m in members:
 		print(m)
-	c = get_category(ctx)
+	c = get_category(ctx, rnd_name)
 	role = await ctx.guild.create_role(name=f'role-{name}')
 	overwrites = {
 		ctx.guild.default_role: discord.PermissionOverwrite(read_messages=False),
@@ -62,47 +67,61 @@ async def create_table_channels(ctx, name, members):
 	voice = await ctx.guild.create_voice_channel(name=f'stol-{name}', category=c, overwrites=overwrites)
 	for member in members:
 		await member.add_roles(role)
-	global tables
-	tables[name] = Table(name, role, [text, voice])
+	global TABLES
+	print(name)
+	TABLES[name] = Table(name, role, [text, voice])
 
+	await text.send(f'{" ".join([m.mention for m in members])}')
 
-def get_category(ctx):
+def get_category(ctx, rnd_name):
 	for c in ctx.guild.categories:
-		if c.name.lower() == target_category.lower():
+		if c.name.lower() == rnd_name.lower():
 			return c
 	return None
 
 
 @bot.command(name='clean', help='!clean [True]\nMakne pristup svim stolovima koje je stvorio, sa True na kraju ih unisti\nPAZI!! Nema povratka kad unisti')
+@commands.has_role('Bot managers')
 async def clean(ctx, deep:bool=False):
-	global tables
-	num = len(tables)
-	for t in tables:
-		# print(tables[t])
-		await tables[t].clean(deep)
-		tables[t].role = 'Clean'
+	global TABLES
+	num = len(TABLES)
+	for t in TABLES:
+		# print(TABLES[t])
+		await TABLES[t].clean(deep)
+		TABLES[t].role = 'Clean'
 	if deep:
-		tables = []
+		TABLES = dict()
+	global CATEGORIES
+	for c in CATEGORIES:
+		await c.delete()
 	await ctx.send(f'Cleaned {num} groups')
 
 @bot.command(name='close', help='!close X [True]\nZatvori stol, makne pristup, sa True na kraju i unisti kanale.\nMoze se prvo samo maknuti pristup i naknadno ukloniti kanale.')
+@commands.has_role('Bot managers')
 async def close(ctx, name, deep:bool=False):
-	if name in tables:
-		await tables[name].clean(deep)
-		tables[name].role = 'Clean'
+	global TABLES
+	if name in TABLES:
+		await TABLES[name].clean(deep)
+		TABLES[name].role = 'Clean'
 		if deep:
-			del tables[name]
+			del TABLES[name]
 		await ctx.send(f'Closed {name}')
 	else:
 		await ctx.send(f'Unknown name {name}')
 		available = []
-		for i in tables:
-			available.append((i, str(tables[i].role != 'Clean')))
+		for i in TABLES:
+			available.append((i, str(TABLES[i].role != 'Clean')))
 		s = "\n".join([i[0]+'|'+i[1] for i in available])
 		await ctx.send(f'Available channels (name|users still have access):\n{s}')
 
 @bot.command(name='distribute')
+@commands.has_role('Bot managers')
 async def distribute(ctx, name, role:discord.Role, num=4, help="!distribute rundaX @checkinani 4\nNapravi stolove i dodijeli pristup random igracima."):
+	if get_category(ctx, name) == None:
+		c = await ctx.guild.create_category_channel(name)
+		global CATEGORIES
+		CATEGORIES.append(c)
+
 	members = []
 	for member in ctx.guild.members:
 		if role in member.roles:
@@ -110,7 +129,15 @@ async def distribute(ctx, name, role:discord.Role, num=4, help="!distribute rund
 	random.shuffle(members)
 	members = [members[i:i+num] for i in range(0, len(members), num)]
 	for i, l in enumerate(members):
-		await create_table_channels(ctx, f'{name}-{i+1}', l)
+		await create_table_channels(ctx, f'{name}-{i+1}', l, name)
 		await ctx.send(f'{name}-{i+1} {", ".join([m.name for m in l])}')
+
+@bot.command(name='makni_stolove', help='Destroy all channels with a name beggining with "stol".')
+@commands.has_role('Bot managers')
+async def makni_stolove(ctx):
+	for c in ctx.guild.channels:
+		if c.name.startswith('stol'):
+			# print(c.name)
+			await c.delete()
 
 bot.run(token)
