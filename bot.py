@@ -3,10 +3,12 @@ import os
 from discord.ext import commands
 import discord
 import random
+import threading
 
 token = os.getenv('DISCORD_TOKEN')
 target_guild = 'Bot testing'
 target_category = 'Stolovi'
+lock = threading.Lock()
 
 TABLES = dict()
 CATEGORIES = []
@@ -31,7 +33,7 @@ intents = discord.Intents().all()
 bot = commands.Bot(command_prefix='!', intents=intents)
 
 
-@bot.command(name='members')
+@bot.command(name='members', help='Prints out the number of server members, prints out all the roles and number of members.')
 @commands.has_role('Bot managers')
 async def print_memberships(ctx):
 	roles = dict()
@@ -47,7 +49,7 @@ async def print_memberships(ctx):
 	for r in roles:
 		await ctx.send(str((r,roles[r])))
 
-@bot.command(name='table', help='!table X @user1 @user2...\nNapravi text i voice kanal sa imenom stol-X i napravi da je vidljiv korisnicima.')
+@bot.command(name='table', help='!table X @user1 @user2...\nCreates a text & a voice channel named "stol-X" and grants access to selected users.')
 @commands.has_role('Bot managers')
 async def table(ctx, name:str, *args:discord.Member):
 	await create_table_channels(ctx, name, args)
@@ -87,7 +89,7 @@ def get_category(ctx, rnd_name):
 	return None
 
 
-@bot.command(name='clean', help='!clean [True]\nMakne pristup svim stolovima koje je stvorio, sa True na kraju ih unisti\nPAZI!! Nema povratka kad unisti')
+@bot.command(name='clean', help='!clean [True]\nRemove access to all tables created by this bot instance, with True parameter it also destroys them\nWARNING!!! This action is irreversible')
 @commands.has_role('Bot managers')
 async def clean(ctx, deep:bool=False):
 	global TABLES
@@ -103,7 +105,7 @@ async def clean(ctx, deep:bool=False):
 		await c.delete()
 	await ctx.send(f'Cleaned {num} groups')
 
-@bot.command(name='close', help='!close X [True]\nZatvori stol, makne pristup, sa True na kraju i unisti kanale.\nMoze se prvo samo maknuti pristup i naknadno ukloniti kanale.')
+@bot.command(name='close', help='!close X [True]\nClose table, remove access, with True in the end it also destroys channels.\nIt allows removal of access and destruction of channels later.')
 @commands.has_role('Bot managers')
 async def close(ctx, name, deep:bool=False):
 	global TABLES
@@ -121,9 +123,9 @@ async def close(ctx, name, deep:bool=False):
 		s = "\n".join([i[0]+'|'+i[1] for i in available])
 		await ctx.send(f'Available channels (name|users still have access):\n{s}')
 
-@bot.command(name='distribute')
+@bot.command(name='distribute', help='!distribute rundaX @checkinani 4 \nCreates tables & grants access to random players.')
 @commands.has_role('Bot managers')
-async def distribute(ctx, name, role:discord.Role, num=4, help="!distribute rundaX @checkinani 4\nNapravi stolove i dodijeli pristup random igracima."):
+async def distribute(ctx, name, role:discord.Role, num=4):
 	if get_category(ctx, name) == None:
 		c = await ctx.guild.create_category_channel(name)
 		global CATEGORIES
@@ -146,5 +148,40 @@ async def makni_stolove(ctx):
 		if c.name.startswith('stol'):
 			# print(c.name)
 			await c.delete()
+
+@bot.command(name='swap', help='!swap @user @role - Swap an inactive user with a user from role.')
+@commands.has_role('Bot managers')
+async def swap(ctx, user:discord.Member, role:discord.Role):
+	role_to_set = None
+	channel_name = ctx.channel.name
+	suffix = '-'.join(channel_name.split('-')[1:])
+	r = None
+	for i in user.roles:
+		if i.name.endswith(suffix):
+			r = i
+			break
+	await user.remove_roles(r)
+	with lock:
+		new_user = random.choice(role.members)
+		await new_user.remove_roles(role)
+	await new_user.add_roles(r)
+	await ctx.send(f'Swapped {user.mention} with {new_user.mention}')
+
+@bot.command(name='add', help='!add @role - Add a random user from role.')
+@commands.has_role('Bot managers')
+async def swap(ctx, role:discord.Role):
+	role_to_set = None
+	channel_name = ctx.channel.name
+	suffix = '-'.join(channel_name.split('-')[1:])
+	r = None
+	for i in ctx.guild.roles:
+		if i.name.endswith(suffix):
+			r = i
+			break
+	with lock:
+		new_user = random.choice(role.members)
+		await new_user.remove_roles(role)
+	await new_user.add_roles(r)
+	await ctx.send(f'Added {new_user.mention}')
 
 bot.run(token)
