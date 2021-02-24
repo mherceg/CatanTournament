@@ -61,7 +61,10 @@ async def create_table_channels(ctx, name, members, rnd_name=target_category):
 	role = await ctx.guild.create_role(name=f'role-{name}')
 	overwrites = {
 		ctx.guild.default_role: discord.PermissionOverwrite(read_messages=False),
-		role: discord.PermissionOverwrite(read_messages=True)
+		role: discord.PermissionOverwrite(read_messages=True),
+		role: discord.PermissionOverwrite(send_messages=True),
+		role: discord.PermissionOverwrite(connect=True),
+		role: discord.PermissionOverwrite(speak=True)
 	}
 	text = await ctx.guild.create_text_channel(name=f'stol-{name}', category=c, overwrites=overwrites)
 	voice = await ctx.guild.create_voice_channel(name=f'stol-{name}', category=c, overwrites=overwrites)
@@ -72,6 +75,10 @@ async def create_table_channels(ctx, name, members, rnd_name=target_category):
 	TABLES[name] = Table(name, role, [text, voice])
 
 	await text.send(f'{" ".join([m.mention for m in members])}')
+	await text.send('''DOBRODOŠLI NA PRVI HRVATSKI ONLINE CATAN TURNIR ! Nemojte zaboraviti postaviti brzinu igre na brzo (fast) jer u suprotnom ćete morati igrati ispočetka ili gubiti poene. 
+Uključite postavku private game kako vam netko ne bi ušao u sobu dok čekate da se ostali priključe. Ostala pravila su : 4 Players, 10 Victory Points, Base game, Random Dice, Card discard 7 i hidden bank cards.. Molimo vas da (jedna od četiri osobe) napravite sobu na colonist.io, pošaljete link protivnicima u chat i nazovete ju 1. Hrvatski Online Catan Turnir Stol x. 
+U slučaju da nekog nema dulje vrijeme ili vam nešto nije jasno, koristite tag @Pomoć. Kada krene igra napišite u chat stola “krenuli“. NE ZABORAVITE DA POBJEDILI ILI IZGUBILI, KVALIFIKACIJE SE SASTOJE OD TRI IGRE !!! (samo ako odigrate sve tri igre imate šansu osvojiti jednu od nagrada).
+KADA STE GOTOVI S IGROM pošaljite screenshoot rezultata u chat stola na kojem ste igrali i u #screenshoot te označite moderatora pomoću oznake @Pomoć''')
 
 def get_category(ctx, rnd_name):
 	for c in ctx.guild.categories:
