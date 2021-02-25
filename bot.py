@@ -2,8 +2,11 @@
 import os
 from discord.ext import commands
 import discord
-import random
 import threading
+import colonist
+import random
+import time
+import asyncio
 
 token = os.getenv('DISCORD_TOKEN')
 target_guild = 'Bot testing'
@@ -63,10 +66,7 @@ async def create_table_channels(ctx, name, members, rnd_name=target_category):
 	role = await ctx.guild.create_role(name=f'role-{name}')
 	overwrites = {
 		ctx.guild.default_role: discord.PermissionOverwrite(read_messages=False),
-		role: discord.PermissionOverwrite(read_messages=True),
-		role: discord.PermissionOverwrite(send_messages=True),
-		role: discord.PermissionOverwrite(connect=True),
-		role: discord.PermissionOverwrite(speak=True)
+		role: discord.PermissionOverwrite(read_messages=True)
 	}
 	text = await ctx.guild.create_text_channel(name=f'stol-{name}', category=c, overwrites=overwrites)
 	voice = await ctx.guild.create_voice_channel(name=f'stol-{name}', category=c, overwrites=overwrites)
@@ -80,7 +80,7 @@ async def create_table_channels(ctx, name, members, rnd_name=target_category):
 	await text.send('''DOBRODOŠLI NA PRVI HRVATSKI ONLINE CATAN TURNIR ! Nemojte zaboraviti postaviti brzinu igre na brzo (fast) jer u suprotnom ćete morati igrati ispočetka ili gubiti poene. 
 Uključite postavku private game kako vam netko ne bi ušao u sobu dok čekate da se ostali priključe. Ostala pravila su : 4 Players, 10 Victory Points, Base game, Random Dice, Card discard 7 i hidden bank cards.. Molimo vas da (jedna od četiri osobe) napravite sobu na colonist.io, pošaljete link protivnicima u chat i nazovete ju 1. Hrvatski Online Catan Turnir Stol x. 
 U slučaju da nekog nema dulje vrijeme ili vam nešto nije jasno, koristite tag @Pomoć. Kada krene igra napišite u chat stola “krenuli“. NE ZABORAVITE DA POBJEDILI ILI IZGUBILI, KVALIFIKACIJE SE SASTOJE OD TRI IGRE !!! (samo ako odigrate sve tri igre imate šansu osvojiti jednu od nagrada).
-KADA STE GOTOVI S IGROM pošaljite screenshoot rezultata u chat stola na kojem ste igrali i u #screenshoot te označite moderatora pomoću oznake @Pomoć''')
+KADA STE GOTOVI S IGROM pozovite bota s naredbom "!done", ako vam treba pomoć pozovite moderatora sa @Pomoć''')
 
 def get_category(ctx, rnd_name):
 	for c in ctx.guild.categories:
@@ -149,17 +149,18 @@ async def makni_stolove(ctx):
 			# print(c.name)
 			await c.delete()
 
+def get_role(ctx, channel_name):
+	suffix = '-'.join(channel_name.split('-')[1:])
+	r = None
+	for i in ctx.guild.roles:
+		if i.name.endswith(suffix):
+			return r
+
 @bot.command(name='swap', help='!swap @user @role - Swap an inactive user with a user from role.')
 @commands.has_role('Bot managers')
 async def swap(ctx, user:discord.Member, role:discord.Role):
 	role_to_set = None
-	channel_name = ctx.channel.name
-	suffix = '-'.join(channel_name.split('-')[1:])
-	r = None
-	for i in user.roles:
-		if i.name.endswith(suffix):
-			r = i
-			break
+	r = get_role(ctx, ctx.channel.name)
 	await user.remove_roles(r)
 	with lock:
 		new_user = random.choice(role.members)
@@ -171,17 +172,80 @@ async def swap(ctx, user:discord.Member, role:discord.Role):
 @commands.has_role('Bot managers')
 async def swap(ctx, role:discord.Role):
 	role_to_set = None
-	channel_name = ctx.channel.name
-	suffix = '-'.join(channel_name.split('-')[1:])
-	r = None
-	for i in ctx.guild.roles:
-		if i.name.endswith(suffix):
-			r = i
-			break
+	r = get_role(ctx, ctx.channel.name)
 	with lock:
 		new_user = random.choice(role.members)
 		await new_user.remove_roles(role)
 	await new_user.add_roles(r)
 	await ctx.send(f'Added {new_user.mention}')
+
+@bot.command(name='done', help='!done')
+async def done(ctx):
+	username = None
+	def check(m):
+		return m.channel == ctx.channel and m.author != bot.user
+	for i in range(3):
+		if username != None:
+			break
+		await ctx.send('Username jednog od igraca na colonist.io?')
+		msg = await bot.wait_for('message', check=check)
+		username = msg.content
+		if not colonist.check_user(username):
+			await ctx.send(f'Nema usera {username} ili ga ne mogu dohvatiti. Probajte opet ili pozovite @Pomoc.')
+			username = None
+	for i in range(5):
+		try:
+			results = '\n'.join([str(i) for i in colonist.get_result(username, i)])
+		except Exception as e:
+			await ctx.send('Nisam pronasao rezultat. Posaljite screenshot rezultata i oznacite @Pomoc.')
+			print(e)
+			return
+		await ctx.send(f'Nasao sam rezultat:\nRang\tUsername\tBodovi\tUkupno_bodova\n{results}\n')
+		msg = await ctx.send(f'Ako je to tocan rezultat klikni :thumbsup:, ako nije klikni :thumbsdown: (potreban je :thumbsup: dva igraca da bi rezultat bio valjan)')
+		await msg.add_reaction('👍')
+		await msg.add_reaction('👎')
+		user1 = None
+		def check_reaction(reaction, user):
+			if reaction.message != msg:
+				return False
+			if user == bot.user or user == user1:
+				return False
+			if reaction.emoji == '👍' or reaction.emoji == '👎':
+				return True
+		reaction, user1 = await bot.wait_for('reaction_add', check=check_reaction)
+		if reaction.emoji == '👍':
+			reaction, user = await bot.wait_for('reaction_add', check=check_reaction)
+			if reaction.emoji == '👍':
+				with open(f'results/results-{ctx.channel.name.split("-")[1]}.txt', 'a+') as fout:
+					fout.write(results + '\n')
+				await ctx.send('Rezultat zabiljezen, hvala. Ne zaboravite se prijaviti za sljedecu rundu.')
+				await ctx.send('Ovaj kanal ce biti zatvoren za jednu minutu.')
+				await wait_and_close(ctx)
+				return	
+			elif reaction.emoji == '👎':
+				continue
+			else:
+				return
+		elif reaction.emoji == '👎':
+			continue
+		else:
+			return
+	await ctx.send('Nisam pronasao rezultat. Posaljite screenshot rezultata i oznacite @Pomoc.')
+
+async def wait_and_close(ctx):
+	await asyncio.sleep(60)
+	await close(ctx, '-'.join(ctx.channel.name.split('-')[1:]))
+	return		
+
+@bot.command(name='test', help='!done')
+async def test(ctx):
+	chs = ctx.guild.channels
+	for c in chs:
+		if c.name == 'komande_za_bota':
+			msg = await c.fetch_message(c.last_message_id)
+			print(msg.content)
+			print(msg.reactions)
+			for r in msg.reactions:
+				print(r.count, r.emoji, r.message)
 
 bot.run(token)
