@@ -7,6 +7,7 @@ import colonist
 import random
 import time
 import asyncio
+from calculate import compute
 
 token = os.getenv('DISCORD_TOKEN')
 target_guild = 'Bot testing'
@@ -179,7 +180,14 @@ async def swap(ctx, role:discord.Role):
 	await new_user.add_roles(r)
 	await ctx.send(f'Added {new_user.mention}')
 
-@bot.command(name='done', help='!done')
+def print_result(result, filt=False):
+	r = []
+	for i in result:
+		if i.finished and not i.quited and i.isHuman or not filt:
+			r.append(i)
+	return '\n'.join([str(i) for i in r])
+
+@bot.command(name='done', help='!done\nInteractive guide to fetch and store the result')
 async def done(ctx):
 	username = None
 	def check(m):
@@ -195,12 +203,12 @@ async def done(ctx):
 			username = None
 	for i in range(5):
 		try:
-			results = '\n'.join([str(i) for i in colonist.get_result(username, i)])
+			results = colonist.get_result(username, i)
 		except Exception as e:
 			await ctx.send('Nisam pronasao rezultat. Posaljite screenshot rezultata i oznacite @Pomoc.')
 			print(e)
 			return
-		await ctx.send(f'Nasao sam rezultat:\nRang\tUsername\tBodovi\tUkupno_bodova\n{results}\n')
+		await ctx.send(f'Nasao sam rezultat:``` Rang        Username    Bodovi Ukupno_bodova\n{print_result(results)}\n```')
 		msg = await ctx.send(f'Ako je to tocan rezultat klikni :thumbsup:, ako nije klikni :thumbsdown: (potreban je :thumbsup: dva igraca da bi rezultat bio valjan)')
 		await msg.add_reaction('👍')
 		await msg.add_reaction('👎')
@@ -208,7 +216,7 @@ async def done(ctx):
 		def check_reaction(reaction, user):
 			if reaction.message != msg:
 				return False
-			if user == bot.user or user == user1:
+			if user == bot.user or (user == user1 and user.id != 694945316625055854):
 				return False
 			if reaction.emoji == '👍' or reaction.emoji == '👎':
 				return True
@@ -217,7 +225,7 @@ async def done(ctx):
 			reaction, user = await bot.wait_for('reaction_add', check=check_reaction)
 			if reaction.emoji == '👍':
 				with open(f'results/results-{ctx.channel.name.split("-")[1]}.txt', 'a+') as fout:
-					fout.write(results + '\n')
+					fout.write(print_result(results, True) + '\n')
 				await ctx.send('Rezultat zabiljezen, hvala. Ne zaboravite se prijaviti za sljedecu rundu.')
 				await ctx.send('Ovaj kanal ce biti zatvoren za jednu minutu.')
 				await wait_and_close(ctx)
@@ -237,15 +245,17 @@ async def wait_and_close(ctx):
 	await close(ctx, '-'.join(ctx.channel.name.split('-')[1:]))
 	return		
 
-@bot.command(name='test', help='!done')
-async def test(ctx):
-	chs = ctx.guild.channels
-	for c in chs:
-		if c.name == 'komande_za_bota':
-			msg = await c.fetch_message(c.last_message_id)
-			print(msg.content)
-			print(msg.reactions)
-			for r in msg.reactions:
-				print(r.count, r.emoji, r.message)
+@bot.command(name='results', help='!results')
+@commands.has_role('Bot managers')
+async def results(ctx):
+	output = [' Rang             Ime Broj_pobjeda Zbroj_bodova Udio_bodova Odigranih_rundi']
+	for i, x in enumerate(compute()):
+		output.append(f'{i+1:>5}{x}')
+	with open('results.txt', 'w') as fout:
+		fout.write('\n'.join(map(str,output))+'\n')
+	with open('results.txt', 'rb') as fin:
+		await ctx.send('Rezultati!', file=discord.File(fin))
+
+	
 
 bot.run(token)

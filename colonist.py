@@ -13,7 +13,8 @@ class User():
 		self.total = total
 
 	def __str__(self):
-		return f'{self.rank}\t{self.username}\t{self.points}\t{self.total}'
+		# print(self.username, self.finished, self.quited, self.isHuman)
+		return f'{self.rank:>5}{self.username:>16}{self.points:>10}{self.total:>10}'
 
 
 def get_result(user_name, order=0):
