@@ -152,10 +152,9 @@ async def makni_stolove(ctx):
 
 def get_role(ctx, channel_name):
 	suffix = '-'.join(channel_name.split('-')[1:])
-	r = None
 	for i in ctx.guild.roles:
-		if i.name.endswith(suffix):
-			return r
+		if i.name.strip().lower().endswith(suffix.strip().lower()):
+			return i
 
 @bot.command(name='swap', help='!swap @user @role - Swap an inactive user with a user from role.')
 @commands.has_role('Bot managers')
@@ -174,6 +173,7 @@ async def swap(ctx, user:discord.Member, role:discord.Role):
 async def swap(ctx, role:discord.Role):
 	role_to_set = None
 	r = get_role(ctx, ctx.channel.name)
+	print("Rola", r)
 	with lock:
 		new_user = random.choice(role.members)
 		await new_user.remove_roles(role)
@@ -227,7 +227,7 @@ async def done(ctx):
 				with open(f'results/results-{ctx.channel.name.split("-")[1]}.txt', 'a+') as fout:
 					fout.write(print_result(results, True) + '\n')
 				await ctx.send('Rezultat zabiljezen, hvala. Ne zaboravite se prijaviti za sljedecu rundu.')
-				await ctx.send('Ovaj kanal ce biti zatvoren za jednu minutu.')
+				await ctx.send('Ovaj kanal ce biti zatvoren za dvije minute.')
 				await wait_and_close(ctx)
 				return	
 			elif reaction.emoji == '👎':
@@ -241,7 +241,7 @@ async def done(ctx):
 	await ctx.send('Nisam pronasao rezultat. Posaljite screenshot rezultata i oznacite @Pomoc.')
 
 async def wait_and_close(ctx):
-	await asyncio.sleep(60)
+	await asyncio.sleep(120)
 	await close(ctx, '-'.join(ctx.channel.name.split('-')[1:]))
 	return		
 

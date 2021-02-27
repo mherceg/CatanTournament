@@ -20,7 +20,7 @@ def compute():
 		current_results = set()
 		with open(f'results/{f}', 'r') as fin:
 			for line in fin:
-				r = line.split('\t')
+				r = line.split()
 				r = Result(1 if int(r[0]) == 1 else 0, *(r[1:]))
 				if r.name in current_results:
 					print(f'Played twice in the same round {r.name} {f}')
